@@ -1,0 +1,116 @@
+# Batch 6 menu session (figmenu.py --script): label editors (x, y, colour bar),
+# Unicode/mathtext units, 'auto' restore, hide tick numbers only, legend text,
+# heatmap acquisition interval, a deliberately long label (WARNING), shared
+# composite legend with a deliberate entry mismatch (WARNING), save/reload/reset.
+# ---- 02_XRD: y label 'Intensity (a.u.)', hide the y tick numbers; x label edit then 'auto'
+2
+y
+l
+Intensity
+a.u.
+h
+b
+x
+l
+2$\theta$
+deg
+l
+auto
+auto
+b
+s
+b
+# ---- 03_TPC_overlay: legend text Control / Target
+3
+g
+Control; Target
+s
+b
+# ---- 04_TPC_overlay_logtime: legend text, x upper limit 10^2 us
+4
+g
+Control; Target
+x
+x
+100
+b
+r
+s
+b
+# ---- 01_IR: x unit typed with Unicode superscripts cm⁻¹ (U+207B U+00B9) -> cm$^{-1}$; y name edit then 'auto'
+1
+x
+l
+Wavenumber
+cm⁻¹
+b
+y
+l
+Transmission
+%
+l
+auto
+auto
+b
+r
+s
+b
+# ---- 06 heatmap: interval 5 s (span > 300 s -> Time (min)), then 1 s (Time (s)); colour-bar label edit + auto
+6
+i
+5
+r
+i
+1
+c
+l
+PL intensity
+cts s$^{-1}$
+l
+auto
+auto
+b
+r
+s
+d
+l
+p
+b
+# ---- 07: deliberately long x label (label-too-long WARNING), then 'auto' and reset
+7
+x
+l
+Emission wavelength of every in situ photoluminescence scan during the annealing
+nm
+b
+r
+x
+l
+auto
+auto
+b
+d
+b
+# ---- composite: shared legend on, d spans the row, legend at 2,2 (no blank cell)
+c
+h
+on
+g
+d=row
+k
+2,2
+r
+# user entries that do not match the panel handles (count and style WARNINGs)
+o
+Control=#2166AC:solid; Target=#B35806:dotted; Extra=#000000:solid
+r
+o
+none
+s
+d
+p
+l
+p
+r
+b
+q

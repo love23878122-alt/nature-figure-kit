@@ -1,0 +1,67 @@
+# Batch 5 composite layout session for figmenu.py --script (run with
+#   --double-column --composite-panels 06_in_situ_PL_heatmap 03_TPC_overlay 04_TPC_overlay_logtime 07_in_situ_PL_mean_spectrum)
+c
+p
+# layout auto; a custom label is kept but shown as ignored in auto
+a
+auto
+f
+(A)
+p
+f
+auto
+# spans: invalid ones are rejected with the validation message
+g
+z=row
+g
+a=3
+g
+a=row
+# legend in an empty cell: entries first (legend without entries is rejected)
+e
+legend
+o
+Sample 1=#2166AC:solid; Sample 2=#B35806:dashed
+e
+legend
+k
+3,2
+p
+s
+# preview with the saved auto settings
+r
+# unsaved reset: the preview must use the displayed defaults, not composite.json
+d
+p
+r
+# reload the saved settings
+l
+p
+# occupied legend cell: the render reports the error and the menu stays open
+k
+1,1
+r
+# remove the span, then clear all spans, manual layout with spans re-added
+g
+a=
+p
+g
+a=row
+g
+none
+p
+a
+manual
+g
+a=row
+k
+auto
+r
+# manual layout, occupied legend cell: error text is shown, menu stays open
+k
+1,1
+r
+l
+p
+b
+q
