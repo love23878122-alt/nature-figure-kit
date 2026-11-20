@@ -1,0 +1,110 @@
+# House publication style (FIGURE_STYLE_SPEC.md, current).
+# All sizes are at FINAL publication size: the canvas is drawn at 89 mm wide
+# (single column, default) or 183 mm (--double-column) and placed without scaling.
+# Loaded by paper_style.py through a path relative to that module. The font
+# family is pinned at run time by paper_style.resolve_font() (Arial Bold only,
+# unless a substitute is requested explicitly).
+
+# Canvas: fixed, never cropped. figsize is overridden per figure by paper_style.
+figure.figsize: 3.503937, 2.362205
+figure.facecolor: white
+figure.edgecolor: white
+figure.autolayout: False
+figure.constrained_layout.use: False
+savefig.bbox: standard
+savefig.pad_inches: 0
+savefig.facecolor: white
+savefig.edgecolor: white
+savefig.transparent: False
+
+# Type: Arial Bold everywhere. 12 pt axis labels / colour-bar titles;
+# 10 pt tick labels, scientific offsets, legends and annotations (incl. composite panel letters).
+font.family: sans-serif
+font.sans-serif: Arial
+font.style: normal
+font.weight: bold
+font.size: 10
+text.color: black
+axes.labelsize: 12
+axes.labelweight: bold
+axes.labelcolor: black
+axes.labelpad: 2.5
+axes.titlesize: 12
+axes.titleweight: bold
+axes.unicode_minus: False
+axes.formatter.use_mathtext: False
+axes.formatter.useoffset: False
+xtick.labelsize: 10
+ytick.labelsize: 10
+legend.fontsize: 10
+legend.title_fontsize: 10
+mathtext.fontset: custom
+mathtext.default: rm
+mathtext.fallback: None
+
+# Strokes: 1.5 pt data lines and legend samples (1.25 pt for dense spectra
+# 07/10, set per figure); 1.25 pt spines and colour-bar outlines.
+lines.linewidth: 1.5
+lines.solid_capstyle: butt
+lines.dash_capstyle: butt
+lines.scale_dashes: True
+patch.linewidth: 1.25
+axes.linewidth: 1.25
+axes.edgecolor: black
+axes.facecolor: white
+axes.grid: False
+axes.spines.left: True
+axes.spines.bottom: True
+axes.spines.top: True
+axes.spines.right: True
+axes.prop_cycle: cycler(color=["2166AC", "B35806"], linestyle=["-", "--"])
+axes.xmargin: 0
+axes.ymargin: 0.05
+
+# Ticks: 1.0 pt major and minor, outward, left/bottom only; top/right spines stay visible.
+xtick.direction: out
+ytick.direction: out
+xtick.top: False
+xtick.bottom: True
+ytick.left: True
+ytick.right: False
+xtick.labeltop: False
+xtick.labelbottom: True
+ytick.labelright: False
+ytick.labelleft: True
+xtick.major.size: 3.5
+ytick.major.size: 3.5
+xtick.minor.size: 2
+ytick.minor.size: 2
+xtick.major.width: 1.0
+ytick.major.width: 1.0
+xtick.minor.width: 1.0
+ytick.minor.width: 1.0
+xtick.minor.visible: False
+ytick.minor.visible: False
+xtick.major.pad: 2
+ytick.major.pad: 2
+xtick.minor.pad: 2
+ytick.minor.pad: 2
+xtick.color: black
+ytick.color: black
+
+# Legends: frameless, compact.
+legend.frameon: False
+legend.handlelength: 2.2
+legend.handletextpad: 0.4
+legend.borderpad: 0.2
+legend.borderaxespad: 0.3
+legend.labelspacing: 0.25
+
+# Images and heatmaps: nearest/unsmoothed, viridis.
+image.cmap: viridis
+image.interpolation: none
+image.origin: upper
+image.aspect: equal
+image.resample: False
+pcolor.shading: nearest
+pcolormesh.snap: True
+
+path.simplify: False
+agg.path.chunksize: 0
