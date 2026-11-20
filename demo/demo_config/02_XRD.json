@@ -1,0 +1,3 @@
+{"figure": "02_XRD",
+ "axes": {"y": {"tick_labels": false}},
+ "labels": {"ylabel": {"name": "Intensity", "unit": "a.u."}}}
