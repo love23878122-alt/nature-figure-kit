@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+# Generated outputs and logs
+demo_out/
+out*/
+menu_out/
+*.log
+# Local axis overrides (per user / per project)
+figure_configs/
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+._*
+# Never commit secrets
+.env
+*.key
+credentials*.json
