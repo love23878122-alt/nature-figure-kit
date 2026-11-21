@@ -134,6 +134,8 @@ python text_fit_composite_labels.py --out OUT   # panel labels: overlap/clipping
 | `palettes.py`, `palettes/nature_palettes.json` | selectable series palettes (36 Nature palettes + `okabe-ito`): catalog, `list_palettes`, `get_palette`, `assign_series` |
 | `docs/nature_palettes_preview.png` | preview of the 36 Nature palettes (copied from the verified transcription preview) |
 | `demo/test_palettes.py` | synthetic palette self-test (nature-6c-2 render, overflow, unknown id, okabe-ito) |
+| `sample_colors.py` | same sample name, same colour: pins/order map, run-wide name -> colour/linestyle resolver (no plotting) |
+| `demo/test_samecolor.py` | synthetic same-name-same-colour self-test (two-panel 183 mm composite, pins, overflow) |
 | `qa_helpers.py` | colour LUT and heatmap-cell audit helpers used by `verify_figures.py` |
 | `docs/FIGURE_STYLE_SPEC.md` | the figure specification |
 | `USAGE.md` | detailed usage: composite layout modes, spans, legends, saved settings, menu keys |
@@ -197,3 +199,7 @@ All 37 ids:
 | `nature-20c-1` | 20 | #D92B03 #F1997B #F38B2F #A5405E #F4C288 #088C00 #025939 #214EA7 #8B511F #DB6C76 #03C08B #7552A7 #DCA0DD #F2E851 #F1B543 #BF7533 #A38277 #592E13 #F2CDCF #6E86A5 |
 | `nature-20c-2` | 20 | #C6DCB9 #B6E2DC #B8FABF #98F4E0 #8DECF5 #8FDBF3 #A2C4F1 #CEBAF0 #C6C3E1 #EEC2E5 #FFCFD1 #FBE3CD #F9F9CA #FAA09C #F9B29C #F9C89B #FBDF9D #E9E4AF #C6DCB9 #B6E2DC |
 | `nature-24c-1` | 24 | #2279B0 #68BF69 #D2DC38 #F5B16E #F38F3C #CE9FCA #707070 #A9CCDE #734E9C #F7D1E3 #415C42 #FAE93B #8BB8D6 #F7BF6C #C0845C #61B673 #F37F76 #C3B0D2 #90D0C2 #0C0C0C #C6C2DF #BCD896 #EE9094 #D4242A |
+
+## Same sample name, same colour
+
+With a palette named (figure `"palette"` key or `--palette`) or a pin given, a legend name (after config overrides, e.g. `MeO-2PACz`) gets the same colour in every figure of a run and in every data panel of a composite, whatever its position; matching is exact after stripping surrounding whitespace (no case folding). No palette and no pins: nothing changes (spec colours, pixel-identical). Rule: pins first; then `order`-list names, then the other names in first-appearance order (composite: panel order, then legend order; batch: FIGURE_NAMES order, then series order) take the next palette colour not taken by a pin; all names are collected before any colour is assigned. Pins without a palette: unpinned names keep their spec colour by position. Shared map `<config-dir>/sample_colors.json` = `{"pins": {"MeO-2PACz": "#3B549D"}, "order": ["MeO-2PACz", "2PACz"]}` (read automatically, `--no-config` skips it; `--sample-colors FILE` on `make_figures.py`, `make_composite.py`, `figmenu.py`; `--save-sample-colors` appends the resolved order, pins untouched). Overflow (distinct names > palette colours not taken by pins): colours cycle, the linestyle advances per cycle per name (solid -> dashed -> dotted -> dashdot), one `WARNING`; while it fits the figure's own linestyles stay (04 solid/dashed). Duplicate pin colours give a `WARNING`. figmenu main-level key `n`: pins, order, resolved table. Image-file panels are not recoloured. The table is recorded in every style JSON and `FIG.json` (`sample_colors`). Full rule: `USAGE.md`; test: `python demo/test_samecolor.py` (step 13 of `demo/run_demo.sh`).

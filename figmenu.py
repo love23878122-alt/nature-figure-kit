@@ -27,6 +27,18 @@ defaults, p print settings, b back. Also, where the figure has them:
        when the span exceeds 300 s; 'auto' = acquisition number
 Main level: q quit.
 
+Main level ``n``: same sample name, same colour (pins and order of the shared
+map ``<config-dir>/sample_colors.json``, or ``--sample-colors FILE``):
+
+    a  pin a colour: 'MeO-2PACz=#3B549D' (hex #RRGGBB, saved uppercase)
+    u  unpin a name          c  clear all pins
+    o  order list: 'MeO-2PACz; 2PACz; Me-4PACz' (assignment order), or 'none'
+    t  show the resolved name -> colour/linestyle table for every legend figure
+       (03, 04) and for the composite panels (--composite-panels)
+    s  save   l  reload saved   p  print   b  back
+Names match exactly after stripping surrounding whitespace (no case folding).
+Figure and composite renders from the menu use the map as displayed.
+
 Main level ``c``: composite settings (all composites, 89 and 183 mm):
 
     f  label format: (a)  a  a)  a.  (A)  A  A)  A.   (or 'auto' = default (a))
@@ -98,6 +110,7 @@ class Session:
         self.lines = lines
         self.log = open(args.transcript, "w", encoding="utf-8") if args.transcript else None
         self.renderer = None
+        self.sample_map = None   # menu copy of the shared pins/order map (loaded on first use)
 
     # ---------------------------------------------------------------- io
     def say(self, text=""):
@@ -131,10 +144,106 @@ class Session:
     def render(self, name, cfg):
         if self.renderer is None:
             self.renderer = Renderer(self.args)
-        path = self.renderer.render(name, cfg)
+        path = self.renderer.render(name, cfg, copy.deepcopy(self.current_sample_map()))
         self.say(f"  rendered {path}")
         for w in self.renderer.last_warnings:
             self.say(f"  {w}")
+
+    # ------------------------------------------------- sample colours
+    def sample_map_path(self):
+        import sample_colors as sc
+        if getattr(self.args, "sample_colors", None):
+            return Path(self.args.sample_colors)
+        return sc.map_path(fc.config_dir(self.args.config_dir))
+
+    def current_sample_map(self):
+        import sample_colors as sc
+        if self.sample_map is None:
+            try:
+                self.sample_map = sc.load_map(self.sample_map_path())
+            except sc.SampleColorError as exc:
+                self.say(f"  ! saved sample colour map invalid ({exc}); starting empty")
+                self.sample_map = sc.validate_map(None)
+        return self.sample_map
+
+    def sample_tables(self):
+        """Resolved tables: each legend figure on its own, then the composite panels."""
+        import paper_style as ps
+        import plot_figures as pf
+        doc = copy.deepcopy(self.current_sample_map())
+        out = []
+        groups = [(f"figure {n}", [n]) for n in fc.DEFAULT_LEGEND]
+        groups.append((f"composite {' '.join(self.args.composite_panels)}",
+                       [p for p in self.args.composite_panels if p in pf.FIGURE_NAMES]))
+        for title, figs in groups:
+            ctx = pf.Context(data=Path(self.args.data), out=Path(self.args.out), dpi=ps.MIN_DPI, font=None,
+                             config_dir=self.args.config_dir, palette=getattr(self.args, "palette", None),
+                             sample_map=doc)
+            ctx.sample_names = pf.collect_series_names(ctx, figs)
+            out.append(f"  {title}: names {ctx.sample_names or 'none'}")
+            for f in figs:
+                rec = pf.resolve_sample_colors(ctx, f, pf.series_names(ctx, f))
+                if rec is None:
+                    out.append(f"    {f}: inactive (no palette and no pin for its names: spec colours by position)")
+                    continue
+                out.append(f"    {f} (palette {rec['palette'] or 'none'}): " + "; ".join(
+                    f"{k}={rec['table'][k]['color'] or 'spec'}:{rec['table'][k]['linestyle'] or 'figure'}"
+                    f" ({rec['table'][k]['source']})" for k in rec["series_names"]))
+                out += [f"    {w}" for w in rec["warnings"]]
+        return out
+
+    def sample_menu(self):
+        import sample_colors as sc
+        doc = self.current_sample_map()
+        while True:
+            self.say("")
+            self.say(f"== same sample name, same colour ({self.sample_map_path()}) ==")
+            self.say(f"  pins: {'; '.join(f'{k}={v}' for k, v in doc['pins'].items()) or 'none'}")
+            self.say(f"  order: {'; '.join(doc['order']) or 'none'}")
+            self.say("  a) pin   u) unpin   c) clear pins   o) order   t) resolved table")
+            self.say("  s) save   l) reload saved   p) print   b) back")
+            choice = self.ask("names> ")
+            try:
+                if choice == "a":
+                    raw = self.ask("  pin (NAME=#RRGGBB)> ")
+                    if "=" not in raw:
+                        raise sc.SampleColorError("use NAME=#RRGGBB")
+                    name, hexv = raw.rsplit("=", 1)
+                    new = dict(doc["pins"])
+                    new[sc.clean_name(name)] = sc.normalize_hex(hexv)
+                    doc.update(sc.validate_map({"pins": new, "order": doc["order"]}))
+                    self.say(f"  pinned {sc.clean_name(name)} = {new[sc.clean_name(name)]}")
+                elif choice == "u":
+                    name = sc.clean_name(self.ask("  unpin name> "))
+                    if doc["pins"].pop(name, None) is None:
+                        self.say(f"  ! {name!r} is not pinned")
+                    else:
+                        self.say(f"  unpinned {name}")
+                elif choice == "c":
+                    doc["pins"] = {}
+                    self.say("  all pins cleared (not saved)")
+                elif choice == "o":
+                    raw = self.ask("  order ('A; B; C' or 'none')> ")
+                    names = [] if raw.lower() == "none" else [t for t in raw.split(";") if t.strip()]
+                    doc["order"] = sc.validate_map({"order": names})["order"]
+                    self.say(f"  order: {'; '.join(doc['order']) or 'none'}")
+                elif choice == "t":
+                    for line in self.sample_tables():
+                        self.say(line)
+                elif choice == "s":
+                    path = sc.save_map(self.sample_map_path(), doc)
+                    self.say(f"  saved {path}")
+                elif choice == "l":
+                    doc = self.sample_map = sc.load_map(self.sample_map_path())
+                    self.say("  reloaded saved map" if self.sample_map_path().exists() else "  no saved map; empty")
+                elif choice == "p":
+                    self.say(f"  pins {doc['pins']} order {doc['order']}")
+                elif choice in ("b", "back", "q"):
+                    return
+                else:
+                    self.say(f"  ! unknown choice {choice!r}")
+            except sc.SampleColorError as exc:
+                self.say(f"  ! rejected: {exc}")
 
     # -------------------------------------------------------------- menus
     def run(self):
@@ -149,6 +258,8 @@ class Session:
                 self.say(f" {i:2d}) {n}{saved}")
             saved = " [saved config]" if fc.composite_config_path(self.args.config_dir).exists() else ""
             self.say(f"  c) composite labels, layout and spans{saved}")
+            saved = " [saved map]" if self.sample_map_path().exists() else ""
+            self.say(f"  n) same sample name, same colour: pins and order{saved}")
             self.say("  q) quit")
             choice = self.ask("figure> ")
             if choice.lower() in ("q", "quit", "exit"):
@@ -156,6 +267,9 @@ class Session:
                 return 0
             if choice == "c":
                 self.composite_menu()
+                continue
+            if choice == "n":
+                self.sample_menu()
                 continue
             if choice in names:
                 self.figure_menu(choice)
@@ -450,6 +564,14 @@ class Session:
         for e in cfg.get("legend_entries") or []:
             argv += ["--legend-entry", e]
         argv.append("--shared-legend" if cfg.get("shared_legend") else "--no-shared-legend")
+        if getattr(self.args, "palette", None):
+            argv += ["--palette", self.args.palette]
+        doc = self.current_sample_map()
+        if doc["pins"] or doc["order"] or self.sample_map_path().exists():
+            # The map as displayed (it may be unsaved) goes to the preview explicitly.
+            import sample_colors as sc
+            out_dir.mkdir(parents=True, exist_ok=True)
+            argv += ["--sample-colors", str(sc.save_map(out_dir / f"composite_preview_{n:02d}.sample_colors.json", doc))]
         self.say(f"  make_composite {' '.join(argv[argv.index('--layout'):])}")
         rc = mc.main(argv)
         if rc != 0 and not out.exists():
@@ -605,13 +727,14 @@ class Renderer:
         ps.apply_style(self.font)
         self.args = args
 
-    def render(self, name, cfg):
+    def render(self, name, cfg, sample_map=None):
         pf, ps = self.pf, self.ps
         ps.apply_style(self.font)
         width = ps.DOUBLE_COLUMN_MM if self.args.double_column else ps.SINGLE_COLUMN_MM
         ctx = pf.Context(data=Path(self.args.data).resolve(), out=Path(self.args.out).resolve(),
                          dpi=ps.MIN_DPI, font=self.font, width_mm=width, only={name},
-                         overrides={name: copy.deepcopy(cfg)}, palette=getattr(self.args, "palette", None))
+                         overrides={name: copy.deepcopy(cfg)}, palette=getattr(self.args, "palette", None),
+                         config_dir=self.args.config_dir, sample_map=sample_map)
         pf.render_all(ctx)
         self.last_warnings = list(ctx.warnings)
         return ctx.out / f"{name}.tiff"
@@ -632,6 +755,8 @@ def main(argv=None):
     ap.add_argument("--transcript", type=Path, default=None, help="also write the session to this file")
     ap.add_argument("--palette", default=None,
                     help="session series palette id (e.g. nature-6c-2) for figures without a 'palette' key")
+    ap.add_argument("--sample-colors", type=Path, default=None, metavar="FILE",
+                    help="shared pins/order map for menu key n (default: <config-dir>/sample_colors.json)")
     args = ap.parse_args(argv)
     if args.palette is not None:
         import palettes

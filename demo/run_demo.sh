@@ -183,4 +183,52 @@ for k, v in checks.items():
     print(f"{'PASS' if v else 'FAIL'} palette: {k}")
 sys.exit(0 if all(checks.values()) else 1)
 PYEOF
+step "13. same sample name, same colour: synthetic two-panel composite, pins, overflow; real-kit 03/04 with reversed legend"
+# Runs after every check above and writes only to its own subdirectories, so the
+# earlier outputs (no palette named, no pins) are unaffected.
+SC="$OUT/samecolor_test"
+"$PY" "$KIT/demo/test_samecolor.py" --out "$SC" 2>/dev/null | grep -E "^(PASS|FAIL)|^SAMECOLOR TEST"
+mkdir -p "$SC/kit_configs"
+printf '%s\n' '{"figure": "03_TPC_overlay", "legend": {"labels": ["MeO-2PACz", "2PACz"]}}' > "$SC/kit_configs/03_TPC_overlay.json"
+printf '%s\n' '{"figure": "04_TPC_overlay_logtime", "legend": {"labels": ["2PACz", "MeO-2PACz"]}}' > "$SC/kit_configs/04_TPC_overlay_logtime.json"
+"$PY" "$KIT/make_figures.py" --data "$DATA" --manifest "$MAN" --out "$SC/kit_figures" --config-dir "$SC/kit_configs" \
+      --palette nature-6c-2 --only 03_TPC_overlay,04_TPC_overlay_logtime --save-sample-colors | grep -E "^(SAMPLE|RENDER)"
+# Single-figure run of 04 alone reads the saved order from the same config dir.
+"$PY" "$KIT/make_figures.py" --data "$DATA" --manifest "$MAN" --out "$SC/kit_figures_04_only" --config-dir "$SC/kit_configs" \
+      --palette nature-6c-2 --only 04_TPC_overlay_logtime | grep -E "^(SAMPLE COLORS|RENDER)"
+"$PY" "$KIT/make_composite.py" --data "$DATA" --manifest "$MAN" --config-dir "$SC/kit_configs" --double-column \
+      --palette nature-6c-2 --out "$SC/kit_composite/tpc_03_04_183mm.tiff" \
+      --panels 04_TPC_overlay_logtime 03_TPC_overlay | tail -n 1 | cut -c1-120
+"$PY" - "$SC" <<'PYEOF'
+import json, sys
+from pathlib import Path
+sc = Path(sys.argv[1])
+st = lambda d, n: json.loads((sc / d / "qa" / f"{n}.style.json").read_text())  # noqa: E731
+h = lambda r: {x["label"]: x["color"] for x in r["line_handles"]}  # noqa: E731
+s3, s4 = st("kit_figures", "03_TPC_overlay"), st("kit_figures", "04_TPC_overlay_logtime")
+s4o = st("kit_figures_04_only", "04_TPC_overlay_logtime")
+comp = json.loads((sc / "kit_composite" / "tpc_03_04_183mm.json").read_text())["sample_colors"]
+saved = json.loads((sc / "kit_configs" / "sample_colors.json").read_text())
+c3, c4 = h(s3), h(s4)
+checks = {
+    "03/04 legends are reversed": [x["label"] for x in s3["line_handles"]] == ["MeO-2PACz", "2PACz"]
+        and [x["label"] for x in s4["line_handles"]] == ["2PACz", "MeO-2PACz"],
+    "each legend name has the same colour in 03 and 04 (style JSON)": c3 == c4 and len(c3) == 2,
+    "first appearance (03 first): MeO-2PACz=#3B549D, 2PACz=#D3272B": c3 == {"MeO-2PACz": "#3B549D", "2PACz": "#D3272B"},
+    "style JSON records the resolved table": s4["sample_colors"]["table"]["MeO-2PACz"]["color"] == "#3B549D",
+    "04 keeps its spec solid/dashed by position while the palette fits":
+        [x["linestyle"] for x in s4["line_handles"]] == ["solid", "dashed"],
+    "--save-sample-colors wrote the order, pins untouched": saved == {"pins": {}, "order": ["MeO-2PACz", "2PACz"]},
+    "04-only run with the saved map reproduces the colours": h(s4o) == c3,
+    "composite (04 first): one run-wide table, same colours in both panels":
+        comp["names_in_order"] == ["2PACz", "MeO-2PACz"]
+        and comp["by_panel"]["a"]["table"]["2PACz"]["color"] == comp["by_panel"]["b"]["table"]["2PACz"]["color"]
+        and comp["by_panel"]["a"]["table"]["MeO-2PACz"]["color"] == comp["by_panel"]["b"]["table"]["MeO-2PACz"]["color"],
+    "composite reads the saved order (MeO-2PACz stays #3B549D)":
+        comp["by_panel"]["a"]["table"]["MeO-2PACz"]["color"] == "#3B549D",
+}
+for k, v in checks.items():
+    print(f"{'PASS' if v else 'FAIL'} samecolor kit: {k}")
+sys.exit(0 if all(checks.values()) else 1)
+PYEOF
 echo "DEMO OK: outputs in $OUT"
