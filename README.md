@@ -131,9 +131,69 @@ python text_fit_composite_labels.py --out OUT   # panel labels: overlap/clipping
 | `plot_figures.py` | data reading, transforms, provenance (no styling) |
 | `paper_style.py`, `paper.mplstyle` | font resolution, fixed-canvas layout, legend/tick collision handling, TIFF export, evidence |
 | `figure_config.py` | axis-override schema, validation, load/save/apply |
+| `palettes.py`, `palettes/nature_palettes.json` | selectable series palettes (36 Nature palettes + `okabe-ito`): catalog, `list_palettes`, `get_palette`, `assign_series` |
+| `docs/nature_palettes_preview.png` | preview of the 36 Nature palettes (copied from the verified transcription preview) |
+| `demo/test_palettes.py` | synthetic palette self-test (nature-6c-2 render, overflow, unknown id, okabe-ito) |
 | `qa_helpers.py` | colour LUT and heatmap-cell audit helpers used by `verify_figures.py` |
 | `docs/FIGURE_STYLE_SPEC.md` | the figure specification |
 | `USAGE.md` | detailed usage: composite layout modes, spans, legends, saved settings, menu keys |
 | `demo/menu_layout.keys` | scripted composite layout/span/legend menu session used by the demo |
 | `demo/demo_config/02_XRD.json` | demo-only default XRD config for `run_demo.sh` step 1 (`axes.y.tick_labels: false`, y label `Intensity (a.u.)`) |
 | `SKILL.md`, `AGENTS.md`, `CLAUDE.md` | instructions for coding agents |
+
+## Selectable palettes
+
+- Config JSON (per figure, saved by `figmenu.py` or written by hand): `{"figure": "04_TPC_overlay_logtime", "axes": {}, "palette": "nature-6c-2"}`. The name is validated; an unknown id is rejected with a short list of valid ids.
+- CLI: `python make_figures.py ... --palette nature-6c-2` or `python figmenu.py ... --palette nature-6c-2`. This is the session choice for every line figure whose config has no `palette` key.
+- Menu: in a line-figure menu (01, 02, 03, 04, 07, 10) press `P`, then type an id (`list` prints every id with its hex, `none` clears the figure's palette). The chosen id and its hex list are printed; `s` saves it.
+- Naming a palette switches the series colours directly. Single-series figures take the first colour; 03/04 take the first two and keep their solid/dashed pair. Heatmaps, the PL image and colour bars stay on their colormaps (`viridis`).
+- If no palette is named, the bundled figures keep their spec colours (#2166AC, and #2166AC / #B35806 solid/dashed for 03/04).
+- Overflow: with more series than the palette holds, the colours cycle and the linestyle advances once per cycle (solid -> dashed -> dotted -> dashdot, then repeat). A `WARNING: palette ... has N colours but M series were requested ...` goes to stderr and into the evidence / `qa/<figure>.style.json` (`palette.warning`). Nothing crashes.
+- Evidence: a figure rendered with a palette records `palette`, `palette_hex_used` and `line_handles` in `qa/<figure>.style.json` and the full assignment under `evidence.palette`.
+- Python: `import palettes; palettes.list_palettes(); palettes.get_palette("nature-6c-2"); palettes.assign_series(8, "nature-6c-2")`. `python palettes.py` prints the catalog; data in `palettes/nature_palettes.json`.
+- Preview of all 36 Nature palettes: [`docs/nature_palettes_preview.png`](docs/nature_palettes_preview.png) (copied unchanged from the verified transcription preview of the source article; binary PNG). The PNG is kept in the local kit but is not stored in the GitHub repository, because the text-only upload cannot carry binaries; the hex table below and `python palettes.py` list every palette.
+- Self-test (synthetic data only): `python demo/test_palettes.py --out demo_out/palette_test` (also step 12 of `bash demo/run_demo.sh`).
+
+Source of the 36 `nature-*` palettes: [论文配色：跟着顶刊学配色（Nature篇）](https://www.163.com/dy/article/J70K7HOA0511CJ6T.html), hex transcribed from printed labels (36 palettes, 270 hex values, order kept). `okabe-ito` (colour-blind friendly) is shipped as a separately named palette.
+
+All 37 ids:
+
+| id | n | hex (series order) |
+|---|---:|---|
+| `okabe-ito` | 8 | #0072B2 #D55E00 #009E73 #CC79A7 #56B4E9 #E69F00 #F0E442 #000000 |
+| `nature-3c-1` | 3 | #BF1D2D #262626 #293890 |
+| `nature-3c-2` | 3 | #F1B656 #397FC7 #040676 |
+| `nature-3c-3` | 3 | #6F6F6F #F6631C #6D65A3 |
+| `nature-3c-4` | 3 | #FF9A9B #9998FF #C99BFF |
+| `nature-4c-1` | 4 | #DE582B #1868B2 #018A67 #F3A332 |
+| `nature-4c-2` | 4 | #069DFF #808080 #A4E048 #010101 |
+| `nature-4c-3` | 4 | #BABABA #0001A1 #037F77 #C5272D |
+| `nature-4c-4` | 4 | #32037D #7C1A97 #C94E65 #D9995B |
+| `nature-4c-5` | 4 | #015493 #019092 #999999 #F4A99B |
+| `nature-4c-6` | 4 | #909090 #0095FF #019092 #6FDCB5 |
+| `nature-4c-7` | 4 | #2F2D54 #9193B4 #BD9AAD #E8D2B3 |
+| `nature-4c-8` | 4 | #D6D6D6 #9CB0C3 #7C9D97 #EAB080 |
+| `nature-4c-9` | 4 | #4FBD81 #ADE0B4 #5DBFE9 #E7E6D4 |
+| `nature-5c-1` | 5 | #808080 #F94141 #F3B169 #589FF3 #37AB78 |
+| `nature-5c-2` | 5 | #60966D #5B3660 #FFC839 #E90F44 #63ADEE |
+| `nature-5c-3` | 5 | #ABC6E4 #C39398 #FCDABA #A7D2BA #D0CADE |
+| `nature-6c-1` | 6 | #C72228 #F98F34 #0C4E9B #F5867F #FFBC80 #6B98C4 |
+| `nature-6c-2` | 6 | #3B549D #D3272B #6BBC46 #9EAAD1 #F29091 #B4DEA2 |
+| `nature-6c-3` | 6 | #23B2E0 #000000 #EF2C2B #C2C2C2 #A5CC5B #EEBEC0 |
+| `nature-6c-4` | 6 | #000000 #5CA400 #8BCF02 #338FEB #E7308B #B31761 |
+| `nature-6c-5` | 6 | #C55645 #354898 #73ABCF #972D36 #FAAE5F #6B6B6B |
+| `nature-6c-6` | 6 | #27447C #4871B3 #E73C36 #991F22 #B88640 #168676 |
+| `nature-6c-7` | 6 | #3E6790 #6483A4 #646774 #858892 #AF873E #BD9E64 |
+| `nature-6c-8` | 6 | #91CDC8 #6FB9D0 #5499BD #3981AF #386195 #324C63 |
+| `nature-6c-9` | 6 | #FBB463 #80B1D3 #F47F72 #BDBADB #FBF8B4 #8DD1C6 |
+| `nature-10c-1` | 10 | #F49568 #ED746A #DEAE8F #DBAA77 #82C61E #77DCDD #66C999 #638DEE #AA66EB #E0A4DD |
+| `nature-10c-2` | 10 | #D2D2D2 #F5AB5E #947959 #5F97C6 #F09496 #9C9BE9 #AFC778 #EFDBB9 #A3CDEA #F4DFDD |
+| `nature-10c-3` | 10 | #C2900F #BDC314 #656D14 #6AAF2D #FFC0F3 #E6D3A0 #E5E7A2 #C2C5A4 #C5E0AB #FFE6FA |
+| `nature-10c-4` | 10 | #DEECF6 #AFC8E2 #E2F2CD #B6DAA7 #F9D5D5 #EF98A1 #FBE3C0 #FBC99A #E8E0EF #C2B1D7 |
+| `nature-10c-5` | 10 | #A5D1B0 #CE8A8D #FFF7C1 #E0F3FF #ADD3F4 #F7C9CF #FEE4E8 #7CA3B8 #BFB8D6 #FCCB8E |
+| `nature-12c-1` | 12 | #B7DAFE #7BB1E3 #00C892 #038766 #396251 #E8DC6C #F4A63A #CFBCD4 #A77D9A #DF562C #8A4B43 #1963B3 |
+| `nature-12c-2` | 12 | #B12222 #FF4400 #FEA600 #FFE100 #DEB887 #F5E7BC #2E8A57 #9BCD31 #20B3AA #B0E1E7 #789CF2 #3B63E6 |
+| `nature-15c-1` | 15 | #C0E2FD #FEC0C1 #CDC6FF #FDC0F7 #F3D8F1 #D6EBBF #E1CAF7 #BFDCE2 #F8F0BE #BEEFBF #F8C9C8 #C0E2D2 #E9BFC0 #E3E3E3 #BFBFBF |
+| `nature-20c-1` | 20 | #D92B03 #F1997B #F38B2F #A5405E #F4C288 #088C00 #025939 #214EA7 #8B511F #DB6C76 #03C08B #7552A7 #DCA0DD #F2E851 #F1B543 #BF7533 #A38277 #592E13 #F2CDCF #6E86A5 |
+| `nature-20c-2` | 20 | #C6DCB9 #B6E2DC #B8FABF #98F4E0 #8DECF5 #8FDBF3 #A2C4F1 #CEBAF0 #C6C3E1 #EEC2E5 #FFCFD1 #FBE3CD #F9F9CA #FAA09C #F9B29C #F9C89B #FBDF9D #E9E4AF #C6DCB9 #B6E2DC |
+| `nature-24c-1` | 24 | #2279B0 #68BF69 #D2DC38 #F5B16E #F38F3C #CE9FCA #707070 #A9CCDE #734E9C #F7D1E3 #415C42 #FAE93B #8BB8D6 #F7BF6C #C0845C #61B673 #F37F76 #C3B0D2 #90D0C2 #0C0C0C #C6C2DF #BCD896 #EE9094 #D4242A |

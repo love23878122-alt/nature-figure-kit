@@ -159,4 +159,28 @@ for k, v in checks.items():
     print(f"{'PASS' if v else 'FAIL'} b6: {k}")
 sys.exit(0 if all(checks.values()) else 1)
 PYEOF
+step "12. selectable palettes: synthetic nature-6c-2 test render, overflow, unknown id; --palette on the demo figures"
+# Runs after every check above and writes only to its own subdirectories, so the
+# bundled figures (no palette named) are unaffected.
+"$PY" "$KIT/demo/test_palettes.py" --out "$OUT/palette_test" | grep -E "^(PASS|FAIL)|^PALETTE TEST"
+"$PY" "$KIT/make_figures.py" --data "$DATA" --manifest "$MAN" --out "$OUT/palette_test/figures" --no-config \
+      --palette nature-6c-2 --only 01_IR,04_TPC_overlay_logtime | grep -E "^(PALETTE|RENDER)"
+"$PY" - "$OUT" <<'PYEOF'
+import json, sys
+from pathlib import Path
+o = Path(sys.argv[1])
+st = lambda d, n: json.loads((d / "qa" / f"{n}.style.json").read_text())  # noqa: E731
+p4, p1 = st(o / "palette_test" / "figures", "04_TPC_overlay_logtime"), st(o / "palette_test" / "figures", "01_IR")
+d4 = st(o, "04_TPC_overlay_logtime")
+checks = {
+    "--palette nature-6c-2: 04 records palette and its first two hex": p4.get("palette") == "nature-6c-2"
+        and p4.get("palette_hex_used") == ["#3B549D", "#D3272B"],
+    "--palette nature-6c-2: 01 single series takes the first colour": p1.get("palette_hex_used") == ["#3B549D"],
+    "no palette named: demo 04 keeps #2166AC / #B35806 solid/dashed": "palette" not in d4
+        and d4["evidence"]["colors"] == ["#2166AC", "#B35806"] and d4["evidence"]["line_styles"] == ["solid", "dashed"],
+}
+for k, v in checks.items():
+    print(f"{'PASS' if v else 'FAIL'} palette: {k}")
+sys.exit(0 if all(checks.values()) else 1)
+PYEOF
 echo "DEMO OK: outputs in $OUT"
