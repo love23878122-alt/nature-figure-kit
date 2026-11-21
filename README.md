@@ -193,6 +193,7 @@ python text_fit_composite_labels.py --out OUT   # panel labels: overlap/clipping
 | `demo/menu_layout.keys` | 示範使用的組合圖版面/跨格/圖例腳本化選單流程 / scripted composite layout/span/legend menu session used by the demo |
 | `demo/demo_config/02_XRD.json` | 僅供示範的 XRD 預設設定，用於 `run_demo.sh` 第 1 步（`axes.y.tick_labels: false`，y 標籤 `Intensity (a.u.)`） / demo-only default XRD config for `run_demo.sh` step 1 (`axes.y.tick_labels: false`, y label `Intensity (a.u.)`) |
 | `SKILL.md`, `AGENTS.md`, `CLAUDE.md` | 給程式碼代理（coding agents）的說明 / instructions for coding agents |
+| `LICENSE` | MIT 授權條款，附示範數據說明 / MIT License text, plus the demo-data note |
 
 ## Selectable palettes / 可選配色
 
@@ -269,3 +270,13 @@ Source of the 36 `nature-*` palettes: [论文配色：跟着顶刊学配色（Na
 指定了配色（圖表設定的 `"palette"` 鍵或 `--palette`）或給了 pin 時，一個圖例名稱（套用設定覆寫後，例如 `MeO-2PACz`）在一次執行的每張圖、以及組合圖的每個數據面板中都會得到相同色彩，不論其位置；名稱比對在去除前後空白後須完全相同（不做大小寫轉換，大小寫不同即為不同名稱）。沒有配色也沒有 pin：什麼都不變（規範色彩，逐像素相同）。規則：先處理 pins；接著 `order` 清單中的名稱，再來其他名稱依首次出現順序（組合圖：面板順序，再依圖例順序；批次：FIGURE_NAMES 順序，再依系列順序）取得下一個未被 pin 佔用的配色色彩；所有名稱都在分配任何色彩之前收集完成。只有 pin 而沒有配色：未被 pin 的名稱依位置保留規範色彩。共用對照表 `<config-dir>/sample_colors.json` = `{"pins": {"MeO-2PACz": "#3B549D"}, "order": ["MeO-2PACz", "2PACz"]}`（自動讀取，`--no-config` 會略過；`make_figures.py`、`make_composite.py`、`figmenu.py` 有 `--sample-colors FILE`；`--save-sample-colors` 會附加解析後的順序，pins 不變）。超量（不同名稱數 > 未被 pin 佔用的配色色數）：色彩循環，線型依每個名稱、每循環一輪前進（solid -> dashed -> dotted -> dashdot），只出現一則 `WARNING`；在放得下的情況下，圖表自身的線型保持不變（04 實線/虛線）。重複的 pin 色彩會產生 `WARNING`。figmenu 主選單按鍵 `n`：pins、order、解析後的對照表。影像檔面板不會重新上色。對照表記錄在每個 style JSON 與 `FIG.json`（`sample_colors`）中。完整規則：`USAGE.md`；測試：`python demo/test_samecolor.py`（`demo/run_demo.sh` 的第 13 步）。
 
 With a palette named (figure `"palette"` key or `--palette`) or a pin given, a legend name (after config overrides, e.g. `MeO-2PACz`) gets the same colour in every figure of a run and in every data panel of a composite, whatever its position; matching is exact after stripping surrounding whitespace (no case folding). No palette and no pins: nothing changes (spec colours, pixel-identical). Rule: pins first; then `order`-list names, then the other names in first-appearance order (composite: panel order, then legend order; batch: FIGURE_NAMES order, then series order) take the next palette colour not taken by a pin; all names are collected before any colour is assigned. Pins without a palette: unpinned names keep their spec colour by position. Shared map `<config-dir>/sample_colors.json` = `{"pins": {"MeO-2PACz": "#3B549D"}, "order": ["MeO-2PACz", "2PACz"]}` (read automatically, `--no-config` skips it; `--sample-colors FILE` on `make_figures.py`, `make_composite.py`, `figmenu.py`; `--save-sample-colors` appends the resolved order, pins untouched). Overflow (distinct names > palette colours not taken by pins): colours cycle, the linestyle advances per cycle per name (solid -> dashed -> dotted -> dashdot), one `WARNING`; while it fits the figure's own linestyles stay (04 solid/dashed). Duplicate pin colours give a `WARNING`. figmenu main-level key `n`: pins, order, resolved table. Image-file panels are not recoloured. The table is recorded in every style JSON and `FIG.json` (`sample_colors`). Full rule: `USAGE.md`; test: `python demo/test_samecolor.py` (step 13 of `demo/run_demo.sh`).
+
+## License / 授權
+
+本專案採用 MIT 授權條款（MIT License）釋出，完整條款見 [`LICENSE`](LICENSE)。
+
+Copyright (c) 2026 林倚陞 (Yi-Sheng Lin)
+
+This project is licensed under the MIT License; see [`LICENSE`](LICENSE) for the full text.
+
+Copyright (c) 2026 林倚陞 (Yi-Sheng Lin)
