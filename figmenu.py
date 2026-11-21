@@ -18,6 +18,10 @@ Pick a figure (1-10), then its x axis, y axis or colour bar (where present):
 
 Figure level: r render, s save config, l reload saved config, d reset to spec
 defaults, p print settings, b back. Also, where the figure has them:
+    P  series palette (line figures 01/02/03/04/07/10): 'list' shows every id,
+       an id such as nature-6c-2 sets it (the id and its hex are printed),
+       'none' clears it (no palette named: spec colours). --palette NAME on the
+       command line is the session choice for figures without a "palette" key.
     g  legend text (03/04): 'Control; Target' (one per line), 'auto' = defaults
     i  acquisition interval in s (06/08/09): x becomes Time (s), or Time (min)
        when the span exceeds 300 s; 'auto' = acquisition number
@@ -163,7 +167,7 @@ class Session:
     def figure_menu(self, name):
         try:
             cfg = fc.load(name, self.args.config_dir) or fc.empty(name)
-            if cfg["axes"] or any(k in cfg for k in ("labels", "legend", "heatmap")):
+            if cfg["axes"] or any(k in cfg for k in ("labels", "legend", "heatmap", "palette")):
                 self.say(f"  loaded saved config {fc.config_path(name, self.args.config_dir)}")
         except (fc.ConfigError, ValueError) as exc:
             self.say(f"  ! saved config invalid ({exc}); starting from spec defaults")
@@ -178,6 +182,8 @@ class Session:
                 opts += "   g) legend text"
             if name in fc.HEATMAPS:
                 opts += "   i) acquisition interval"
+            if fc.has_series(name):
+                opts += "   P) palette"
             self.say(opts)
             self.say("  r) render   s) save   l) reload saved   d) reset to defaults   p) print   b) back")
             choice = self.ask(f"{name}> ")
@@ -187,6 +193,8 @@ class Session:
                 self.legend_text(name, cfg)
             elif choice == "i" and name in fc.HEATMAPS:
                 self.heatmap_interval(name, cfg)
+            elif choice == "P" and fc.has_series(name):
+                self.palette_choice(name, cfg)
             elif choice == "r":
                 try:
                     self.render(name, cfg)
@@ -226,6 +234,33 @@ class Session:
         cfg.clear()
         cfg.update(clean)
         self.say(f"  legend text: {'; '.join(fc.legend_labels(name, cfg))}")
+
+    def palette_choice(self, name, cfg):
+        import palettes
+        session = getattr(self.args, "palette", None)
+        raw = self.ask("  palette (id such as nature-6c-2, 'list', or 'none' to clear)> ")
+        if raw.lower() == "list":
+            for pid in palettes.list_palettes():
+                self.say(f"    {palettes.describe(pid)}")
+            raw = self.ask("  palette (id, or 'none' to clear)> ")
+        new = copy.deepcopy(cfg)
+        if raw.lower() in ("none", "clear", ""):
+            new.pop("palette", None)
+        else:
+            new["palette"] = raw
+        try:
+            clean = fc.validate(new)
+        except fc.ConfigError as exc:
+            self.say(f"  ! rejected: {exc}")
+            return
+        cfg.clear()
+        cfg.update(clean)
+        if cfg.get("palette"):
+            self.say(f"  palette: {palettes.describe(cfg['palette'])}")
+        elif session:
+            self.say(f"  palette cleared for {name}; session --palette applies: {palettes.describe(session)}")
+        else:
+            self.say(f"  palette cleared for {name} (no palette named: spec colours)")
 
     def heatmap_interval(self, name, cfg):
         raw = self.ask("  acquisition interval in s (number, optional start: '2' or '2 start=10'; "
@@ -576,7 +611,7 @@ class Renderer:
         width = ps.DOUBLE_COLUMN_MM if self.args.double_column else ps.SINGLE_COLUMN_MM
         ctx = pf.Context(data=Path(self.args.data).resolve(), out=Path(self.args.out).resolve(),
                          dpi=ps.MIN_DPI, font=self.font, width_mm=width, only={name},
-                         overrides={name: copy.deepcopy(cfg)})
+                         overrides={name: copy.deepcopy(cfg)}, palette=getattr(self.args, "palette", None))
         pf.render_all(ctx)
         self.last_warnings = list(ctx.warnings)
         return ctx.out / f"{name}.tiff"
@@ -595,7 +630,15 @@ def main(argv=None):
     ap.add_argument("--font", default="Arial")
     ap.add_argument("--script", type=Path, default=None, help="file of menu keystrokes (one per line)")
     ap.add_argument("--transcript", type=Path, default=None, help="also write the session to this file")
+    ap.add_argument("--palette", default=None,
+                    help="session series palette id (e.g. nature-6c-2) for figures without a 'palette' key")
     args = ap.parse_args(argv)
+    if args.palette is not None:
+        import palettes
+        try:
+            args.palette = palettes.validate_name(args.palette)
+        except palettes.PaletteError as exc:
+            ap.error(str(exc))
     lines = args.script.read_text(encoding="utf-8").splitlines() if args.script else None
     return Session(args, lines).run()
 

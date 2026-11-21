@@ -163,7 +163,7 @@ def main():
                 cfg = fc.load(n, a.default_config_dir)
                 if cfg:
                     expected = dict(cfg["axes"])
-                    expected.update({k: cfg[k] for k in ("labels", "legend", "heatmap") if cfg.get(k)})
+                    expected.update({k: cfg[k] for k in ("labels", "legend", "heatmap", "palette") if cfg.get(k)})
                     expected = json.loads(json.dumps(expected))
             if res["figures"][n]["axis_overrides"] != expected:
                 res["figures"][n]["evidence"]["problems"].append(

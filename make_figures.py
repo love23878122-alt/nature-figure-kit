@@ -4,6 +4,11 @@
                            [--manifest FILE] [--dpi N] [--font Arial]
                            [--font-substitute FAMILY] [--clearance-mm 1.5]
                            [--failure-report FILE] [--config-dir DIR] [--no-config]
+                           [--palette NAME]
+
+--palette NAME (for example nature-6c-2; list: python palettes.py) switches the
+series colours of the line figures for this run; a figure config "palette" key
+wins. Without it the figures keep their spec colours.
 
 Saved axis overrides (written by figmenu.py) are loaded automatically from
 --config-dir (default: $FIGSTYLE_CONFIG_DIR or figure_configs/ next to this
@@ -102,7 +107,16 @@ def main(argv=None):
                              "or figure_configs/ next to this tool)")
     parser.add_argument("--no-config", action="store_true",
                         help="ignore saved axis overrides and render spec defaults")
+    parser.add_argument("--palette", default=None,
+                        help="series palette id for the line figures (e.g. nature-6c-2, okabe-ito; "
+                             "list: python palettes.py); a figure config 'palette' key wins")
     args = parser.parse_args(argv)
+    if args.palette is not None:
+        import palettes
+        try:
+            args.palette = palettes.validate_name(args.palette)
+        except palettes.PaletteError as exc:
+            parser.error(str(exc))
 
     args.data, args.out, args.manifest = args.data.resolve(), args.out.resolve(), args.manifest.resolve()
     if args.out == args.data or args.data in args.out.parents:
@@ -151,7 +165,7 @@ def main(argv=None):
     width_mm = ps.DOUBLE_COLUMN_MM if args.double_column else ps.SINGLE_COLUMN_MM
     ctx = pf.Context(data=args.data, out=args.out, dpi=args.dpi, font=font,
                      clearance_mm=args.clearance_mm, width_mm=width_mm, only=only,
-                     use_configs=not args.no_config, config_dir=args.config_dir)
+                     use_configs=not args.no_config, config_dir=args.config_dir, palette=args.palette)
     import figure_config as fc
     cfg_dir = fc.config_dir(args.config_dir).resolve()
     if args.no_config:
@@ -159,6 +173,9 @@ def main(argv=None):
     else:
         found = [n for n in pf.FIGURE_NAMES if (only is None or n in only) and fc.config_path(n, cfg_dir).exists()]
         print(f"AXIS OVERRIDES: {cfg_dir} -> {', '.join(found) if found else 'none saved (spec defaults)'}", flush=True)
+    if args.palette:
+        import palettes
+        print(f"PALETTE (session): {palettes.describe(args.palette)}", flush=True)
     print(f"CANVAS: {width_mm:g} mm wide, default height {ctx.height_mm:g} mm; base dpi {ctx.dpi}; "
           f"figures: {'all' if only is None else ','.join(sorted(only))}", flush=True)
 
@@ -175,7 +192,7 @@ def main(argv=None):
         "source_sha256": before, "source_sha256_after_render": after, "sources_unchanged": unchanged,
         "base_dpi": ctx.dpi, "width_mm": width_mm, "default_height_mm": ctx.height_mm,
         "double_column": bool(args.double_column), "only": None if only is None else sorted(only),
-        "font": font.as_dict(), "clearance_target_mm": args.clearance_mm,
+        "font": font.as_dict(), "clearance_target_mm": args.clearance_mm, "session_palette": args.palette,
         "config_dir": None if args.no_config else str(cfg_dir), "axis_overrides": ctx.applied_configs,
         "empty_sheets": ctx.empty_sheets, "figures": ctx.records,
         "versions": {"python": platform.python_version(), "matplotlib": matplotlib.__version__,
