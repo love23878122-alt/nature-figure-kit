@@ -6,3 +6,6 @@ before publishing.
 
 Demo data: all demo/example data in demo/data/ are synthetic. They are generated
 by demo/make_demo_data.py (NumPy, fixed seed) and contain no measured data.
+
+示範數據（繁體中文說明）：demo/data/ 中所有示範/範例數據皆為合成數據，由
+demo/make_demo_data.py（NumPy、固定種子）產生，不含任何實測數據。
