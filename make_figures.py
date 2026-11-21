@@ -4,11 +4,19 @@
                            [--manifest FILE] [--dpi N] [--font Arial]
                            [--font-substitute FAMILY] [--clearance-mm 1.5]
                            [--failure-report FILE] [--config-dir DIR] [--no-config]
-                           [--palette NAME]
+                           [--palette NAME] [--sample-colors FILE] [--save-sample-colors]
 
 --palette NAME (for example nature-6c-2; list: python palettes.py) switches the
 series colours of the line figures for this run; a figure config "palette" key
 wins. Without it the figures keep their spec colours.
+
+Same sample name, same colour (sample_colors.py): with a palette named or pins
+given, a legend name gets one colour in every figure of the run, whatever its
+position. Pins/order come from --sample-colors FILE or, automatically,
+<config-dir>/sample_colors.json ({"pins": {"MeO-2PACz": "#3B549D"}, "order": [...]};
+--no-config skips the automatic file). --save-sample-colors appends the run's
+names to that file's "order" (pins untouched) so later single-figure runs
+reproduce the same colours. No palette and no pins: nothing changes.
 
 Saved axis overrides (written by figmenu.py) are loaded automatically from
 --config-dir (default: $FIGSTYLE_CONFIG_DIR or figure_configs/ next to this
@@ -110,6 +118,11 @@ def main(argv=None):
     parser.add_argument("--palette", default=None,
                         help="series palette id for the line figures (e.g. nature-6c-2, okabe-ito; "
                              "list: python palettes.py); a figure config 'palette' key wins")
+    parser.add_argument("--sample-colors", type=Path, default=None, metavar="FILE",
+                        help="pins/order JSON for name-based colours (default: <config-dir>/sample_colors.json "
+                             "when it exists; --no-config skips it)")
+    parser.add_argument("--save-sample-colors", action="store_true",
+                        help="append this run's series names to the map's 'order' (pins untouched)")
     args = parser.parse_args(argv)
     if args.palette is not None:
         import palettes
@@ -167,7 +180,12 @@ def main(argv=None):
                      clearance_mm=args.clearance_mm, width_mm=width_mm, only=only,
                      use_configs=not args.no_config, config_dir=args.config_dir, palette=args.palette)
     import figure_config as fc
+    import sample_colors as sc
     cfg_dir = fc.config_dir(args.config_dir).resolve()
+    try:
+        ctx.sample_map, ctx.sample_map_file, sample_save = sc.cli_map(args.sample_colors, cfg_dir, args.no_config)
+    except sc.SampleColorError as exc:
+        parser.error(str(exc))
     if args.no_config:
         print("AXIS OVERRIDES: disabled (--no-config)", flush=True)
     else:
@@ -179,8 +197,13 @@ def main(argv=None):
     print(f"CANVAS: {width_mm:g} mm wide, default height {ctx.height_mm:g} mm; base dpi {ctx.dpi}; "
           f"figures: {'all' if only is None else ','.join(sorted(only))}", flush=True)
 
-    # 4. Render.
+    # 4. Render (all series names are collected before any colour is assigned).
     pf.render_all(ctx)
+    if ctx.sample_map_file or ctx.sample_records:
+        print(f"SAMPLE COLOR MAP: {ctx.sample_map_file or 'none'}; names {ctx.sample_names}", flush=True)
+    if args.save_sample_colors:
+        path, order = sc.save_order(sample_save, ctx.sample_names or [])
+        print(f"SAMPLE COLORS SAVED: {path} order={order}", flush=True)
 
     # 5. Recheck hashes and write the run manifest.
     after, problems_after = verify_sources(args.data, args.manifest, pf.INPUT_FILES)
@@ -193,6 +216,11 @@ def main(argv=None):
         "base_dpi": ctx.dpi, "width_mm": width_mm, "default_height_mm": ctx.height_mm,
         "double_column": bool(args.double_column), "only": None if only is None else sorted(only),
         "font": font.as_dict(), "clearance_target_mm": args.clearance_mm, "session_palette": args.palette,
+        "sample_colors": {"map_file": str(ctx.sample_map_file) if ctx.sample_map_file else None,
+                          "pins": ctx.sample_map["pins"], "order": ctx.sample_map["order"],
+                          "names_in_order": ctx.sample_names,
+                          "by_figure": {n: r["table"] for n, r in ctx.sample_records.items()},
+                          "warnings": sorted(ctx.sample_warned)},
         "config_dir": None if args.no_config else str(cfg_dir), "axis_overrides": ctx.applied_configs,
         "empty_sheets": ctx.empty_sheets, "figures": ctx.records,
         "versions": {"python": platform.python_version(), "matplotlib": matplotlib.__version__,

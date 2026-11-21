@@ -8,6 +8,18 @@
                              [--gap-mm 3] [--dpi 600] [--box-aspect 0.68] [--artwork-scale fit|native]
                              [--config-dir DIR | --no-config]
                              [--label-format '(a)'] [--label-pt 14]
+                             [--palette NAME] [--sample-colors FILE] [--save-sample-colors]
+
+Same sample name, same colour (sample_colors.py): with a palette named
+(``--palette`` or a figure config "palette" key) or pins given, every data
+panel uses one run-wide name table. All series names of all data panels are
+collected first (panels in --panels order, then legend order) and only then
+coloured, so a name has the same colour in every panel. Pins/order come from
+``--sample-colors FILE`` or, automatically, ``<config-dir>/sample_colors.json``
+(``--no-config`` skips it); ``--save-sample-colors`` appends the run's names to
+its "order". The table goes into FIG.json (``sample_colors``). Image-file
+panels (TIFF/PNG/PDF) are placed as they are and never recoloured. No palette
+and no pins: nothing changes.
 
 Panels are taken in the given order (reading order, left to right then down)
 and labelled (a), (b), (c) ... in 14 pt Arial Bold (default; at final placement
@@ -707,7 +719,9 @@ def render_layout(panels, ncol, nrow, empty, legend_cell, args, env, out, work, 
         return pf.Context(data=Path(args.data).resolve() if args.data else Path("."), out=work, dpi=ps.MIN_DPI,
                           font=font, width_mm=env["width_mm"] / ncol, use_configs=not args.no_config,
                           config_dir=args.config_dir, write_provenance=False,
-                          suppress_legend=bool(env.get("shared_legend")), **kw)
+                          suppress_legend=bool(env.get("shared_legend")), palette=args.palette,
+                          sample_map=env["sample_map"], sample_map_file=env["sample_map_file"],
+                          sample_names=env["sample_names"], **kw)
 
     # Layout, render, then re-measure the real ink overhang at the final box size
     # (tick layout depends on box size); repeat until no panel outgrows its margins.
@@ -1006,6 +1020,46 @@ def build(args):
         if problems:
             raise SystemExit(f"SOURCE VERIFICATION FAILED: {problems}")
         record["source_sha256"] = before
+    # Same sample name, same colour: collect every data panel's names (panel
+    # order, then legend order) before any colour is assigned.
+    import figure_config as _fc
+    import sample_colors as sc
+    try:
+        sample_map, sample_file, sample_save = sc.cli_map(args.sample_colors, _fc.config_dir(args.config_dir).resolve(),
+                                                          args.no_config)
+    except sc.SampleColorError as exc:
+        raise SystemExit(f"sample colours: {exc}")
+    names_ctx = pf.Context(data=Path(args.data).resolve() if args.data else Path("."), out=Path(args.out).resolve().parent,
+                           dpi=ps.MIN_DPI, font=font, use_configs=not args.no_config, config_dir=args.config_dir,
+                           palette=args.palette, sample_map=sample_map, sample_map_file=sample_file)
+    sample_names = pf.collect_series_names(names_ctx, data_names)
+    names_ctx.sample_names = sample_names
+    by_panel, palettes_used, sample_warn = {}, set(), []
+    for i, p in enumerate(panels):
+        if p["kind"] != "data":
+            continue
+        labels = pf.series_names(names_ctx, p["name"])
+        r = pf.resolve_sample_colors(names_ctx, p["name"], labels)
+        if r is not None:
+            palettes_used.add(r["palette"])
+            by_panel[string.ascii_lowercase[i]] = {"figure": p["name"], "palette": r["palette"],
+                                                   "series_names": labels, "table": r["table"]}
+            sample_warn += [w for w in r["warnings"] if w not in sample_warn]
+    if len(palettes_used) > 1:
+        w = (f"WARNING: sample colours: data panels name different palettes ({', '.join(sorted(map(str, palettes_used)))}); "
+             f"a name can only share its colour across panels that use the same palette")
+        print(w, flush=True)
+        print(w, file=sys.stderr, flush=True)
+        sample_warn.append(w)
+    record["sample_colors"] = {
+        "active": bool(by_panel), "map_file": str(sample_file) if sample_file else None,
+        "pins": sample_map["pins"], "order": sample_map["order"], "session_palette": args.palette,
+        "names_in_order": sample_names, "by_panel": by_panel, "warnings": sample_warn,
+        "image_panels": "not recoloured (TIFF/PNG/PDF artwork is placed as supplied)",
+        "match_rule": "exact after stripping surrounding whitespace; no case folding"}
+    if args.save_sample_colors:
+        path, order = sc.save_order(sample_save, sample_names)
+        print(f"SAMPLE COLORS SAVED: {path} order={order}", flush=True)
     width_mm = ps.DOUBLE_COLUMN_MM if args.double_column else ps.SINGLE_COLUMN_MM
     for i, p in enumerate(panels):
         p["index"] = i
@@ -1022,7 +1076,8 @@ def build(args):
         ctx = pf.Context(data=Path(args.data).resolve(), out=work, dpi=ps.MIN_DPI, font=font,
                          width_mm=PROBE_MM, use_configs=not args.no_config, config_dir=args.config_dir,
                          write_provenance=False, only=set(data_names), measure=True,
-                         height_override_mm=PROBE_MM, suppress_legend=shared)
+                         height_override_mm=PROBE_MM, suppress_legend=shared, palette=args.palette,
+                         sample_map=sample_map, sample_map_file=sample_file, sample_names=sample_names)
         for d in (ctx.out, ctx.qa, ctx.source):
             d.mkdir(parents=True, exist_ok=True)
         for action in pf.DRAWERS:
@@ -1059,6 +1114,7 @@ def build(args):
            "label_h_in": max([max(p["vertical_label_in"].values(), default=0) + slack_in for p in panels
                               if p["kind"] == "data" and p["name"] != "05_PL_image"], default=0.0),
            "font": font, "font_path": font.path, "label_pt": label_pt, "settings": settings,
+           "sample_map": sample_map, "sample_map_file": sample_file, "sample_names": sample_names,
            "data_names": data_names, "legend_entries": legend_entries if use_legend else None,
            "shared_legend": shared, "legend_source": legend_source if use_legend else None,
            "panel_handles": handles, "legend_warnings": legend_warnings,
@@ -1314,7 +1370,20 @@ def main(argv=None):
                          f"{LABEL_PT_DEFAULT:g}; {fc.LABEL_PT_RANGE[0]:g}-{fc.LABEL_PT_RANGE[1]:g})")
     ap.add_argument("--font", default="Arial")
     ap.add_argument("--font-substitute", default=None)
+    ap.add_argument("--palette", default=None,
+                    help="series palette id for the data panels (a figure config 'palette' key wins)")
+    ap.add_argument("--sample-colors", type=Path, default=None, metavar="FILE",
+                    help="pins/order JSON for name-based colours (default: <config-dir>/sample_colors.json "
+                         "when it exists; --no-config skips it)")
+    ap.add_argument("--save-sample-colors", action="store_true",
+                    help="append this run's series names to the map's 'order' (pins untouched)")
     args = ap.parse_args(argv)
+    if args.palette is not None:
+        import palettes
+        try:
+            args.palette = palettes.validate_name(args.palette)
+        except palettes.PaletteError as exc:
+            ap.error(str(exc))
     args._argv = [str(a) for a in (argv if argv is not None else sys.argv[1:])]
     if args.label_pt is not None and not fc.LABEL_PT_RANGE[0] <= args.label_pt <= fc.LABEL_PT_RANGE[1]:
         ap.error(f"--label-pt must lie in {fc.LABEL_PT_RANGE[0]:g}-{fc.LABEL_PT_RANGE[1]:g}")

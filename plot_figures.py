@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, Locator, LogLocator, 
 import figure_config as fc
 import palettes
 import paper_style as ps
+import sample_colors as sc
 
 BLUE, ORANGE = "#2166AC", "#B35806"
 PL_IMAGE_SHAPE = (3536, 3536)  # project data; other square images are accepted
@@ -69,6 +71,27 @@ class Context:
     # Series palette chosen for the session (make_figures/figmenu --palette); a
     # figure config "palette" key wins. None = no palette named: spec colours.
     palette: str | None = None
+    # Same sample name, same colour (sample_colors.py). ``sample_map`` is the
+    # validated {"pins", "order"} map; None = read <config-dir>/sample_colors.json
+    # when it exists and configs are in use. ``sample_names`` = all series names
+    # of the run in first-appearance order (None = collected by render_all from
+    # the wanted figures in FIGURE_NAMES order); composites pass it in.
+    sample_map: dict | None = None
+    sample_map_file: Path | None = None
+    sample_names: list | None = None
+    sample_records: dict = field(default_factory=dict)
+    sample_warned: set = field(default_factory=set)
+
+    def sample_map_doc(self):
+        """Pins/order map for this run (explicit, else <config-dir>/sample_colors.json, else empty)."""
+        if self.sample_map is None:
+            path = sc.map_path(fc.config_dir(self.config_dir))
+            if self.use_configs and path.exists():
+                self.sample_map = sc.load_map(path)
+                self.sample_map_file = path
+            else:
+                self.sample_map = sc.validate_map(None)
+        return self.sample_map
 
     def palette_for(self, name):
         """Palette id named for figure ``name`` (config key, else session choice) or None."""
@@ -100,7 +123,41 @@ class Context:
         return self.out / "source_data"
 
 
-def series_style(ctx, name, n, spec_colors, spec_linestyles=None):
+def series_names(ctx, name):
+    """Legend labels (after config overrides) of figure ``name``, cleaned; [] for unnamed series."""
+    if name not in fc.DEFAULT_LEGEND:
+        return []
+    return [sc.clean_name(t) for t in fc.legend_labels(name, ctx.config_for(name))]
+
+
+def collect_series_names(ctx, figures):
+    """All series names of ``figures`` (in the given order) in first-appearance order."""
+    return sc.first_appearance(series_names(ctx, f) for f in figures)
+
+
+def resolve_sample_colors(ctx, name, labels):
+    """Run-wide name table for figure ``name`` (palette of that figure); None when inactive."""
+    pal = ctx.palette_for(name)
+    doc = ctx.sample_map_doc()
+    if not labels or not sc.is_active(pal, doc["pins"]):
+        return None
+    run = list(ctx.sample_names) if ctx.sample_names is not None else collect_series_names(
+        ctx, [f for f in FIGURE_NAMES if ctx.wants(f)])
+    run = sc.first_appearance([run, labels])
+    table, warns = sc.resolve(run, pal, pins=doc["pins"], order=doc["order"])
+    for w in warns:
+        if w not in ctx.sample_warned:   # one WARNING per run (stderr), recorded per figure
+            ctx.sample_warned.add(w)
+            ctx.warnings.append(f"{name}: {w}")
+            print(w, flush=True)
+            print(w, file=sys.stderr, flush=True)
+    rec = sc.resolution_record(pal, run, table, warns, doc["pins"], doc["order"], ctx.sample_map_file)
+    rec["figure"] = name
+    rec["series_names"] = list(labels)
+    return rec
+
+
+def series_style(ctx, name, n, spec_colors, spec_linestyles=None, labels=None):
     """Colours and linestyles for ``n`` series of figure ``name``.
 
     No palette named: the spec colours/linestyles, unchanged (returns info None).
@@ -110,6 +167,29 @@ def series_style(ctx, name, n, spec_colors, spec_linestyles=None):
     """
     pal = ctx.palette_for(name)
     styles = list(spec_linestyles) if spec_linestyles else ["-"] * n
+    rec = resolve_sample_colors(ctx, name, [sc.clean_name(t) for t in labels] if labels else None)
+    if rec is not None:
+        # Same sample name, same colour: the colour follows the name, the spec
+        # linestyle stays by position unless the run overflows the palette.
+        keys = rec["series_names"]
+        colors = [rec["table"][k]["color"] or spec_colors[i] for i, k in enumerate(keys)]
+        styles = [palettes.MPL_LINESTYLE[rec["table"][k]["linestyle"]] if rec["table"][k]["linestyle"]
+                  else styles[i] for i, k in enumerate(keys)]
+        for i, k in enumerate(keys):
+            rec["table"][k]["color_used"] = colors[i]
+            rec["table"][k]["linestyle_used"] = palettes.MPL_TO_NAME[styles[i]]
+        ctx.sample_records[name] = rec
+        print(f"SAMPLE COLORS {name}: " + "; ".join(f"{k}={colors[i]}:{palettes.MPL_TO_NAME[styles[i]]}"
+                                                    f" ({rec['table'][k]['source']})" for i, k in enumerate(keys)),
+              flush=True)
+        if not pal:
+            return colors, styles, None
+        overflow = any(rec["table"][k]["linestyle"] for k in keys if rec["table"][k]["source"] == "palette")
+        info = {"id": pal, "palette_hex": palettes.get_palette(pal), "hex_used": colors,
+                "linestyles_used": [palettes.MPL_TO_NAME[s] for s in styles], "overflow": overflow,
+                "warning": "; ".join(rec["warnings"]) or None, "by_name": True}
+        print(f"PALETTE {name}: {pal} -> {' '.join(colors)}", flush=True)
+        return colors, styles, info
     if not pal:
         return list(spec_colors)[:n], styles, None
     a = palettes.assign_series(n, pal, linestyles=spec_linestyles)
@@ -364,6 +444,15 @@ def save_figure(ctx, fig, name, evidence, cax=None, fixed_side_px=None, raster=N
         record["palette"] = evidence["palette"]["id"]
         record["palette_hex_used"] = evidence["palette"]["hex_used"]
         record["line_handles"] = line_handles(ax)
+    srec = ctx.sample_records.get(name)
+    if srec is not None:
+        record["sample_colors"] = srec
+        record["line_handles"] = line_handles(ax)
+        evidence = {**evidence, "sample_colors": srec["table"]}
+    else:
+        record["sample_colors"] = {"active": False, "figure": name, "series_names": series_names(ctx, name),
+                                   "note": "no palette and no pin for these names: spec colours by position"
+                                   if series_names(ctx, name) else "no named series (no legend labels)"}
     (ctx.qa / f"{name}.style.json").write_text(json.dumps(record, ensure_ascii=False, indent=2))
     plt.close(fig)
     evidence = dict(evidence)
@@ -449,7 +538,7 @@ def draw_tpc(ctx):
         # Spec B2: 04 uses dark orange #B35806 and the contrasting blue #2166AC with
         # distinct line styles (solid / dashed) so the traces separate in grayscale.
         # A named palette replaces the colours; the solid/dashed pair is kept (overflow rules aside).
-        colors, styles, pal = series_style(ctx, suffix, len(curves), (BLUE, ORANGE), ("-", "--"))
+        colors, styles, pal = series_style(ctx, suffix, len(curves), (BLUE, ORANGE), ("-", "--"), labels=names)
         for (a, _), label, color, linestyle in zip(curves, names, colors, styles):
             if logtime and not (a[:, 0] > 0).all():
                 raise ValueError("Log time requires strictly positive time values")
@@ -750,6 +839,8 @@ DRAWERS = (draw_ir, draw_xrd, draw_tpc, draw_pl_image, draw_in_situ)
 def render_all(ctx):
     for directory in (ctx.out, ctx.qa, ctx.source):
         directory.mkdir(parents=True, exist_ok=True)
+    if ctx.sample_names is None:   # batch: all names first (FIGURE_NAMES order), then colours
+        ctx.sample_names = collect_series_names(ctx, [f for f in FIGURE_NAMES if ctx.wants(f)])
     for action in DRAWERS:
         print(f"RUNNING {action.__name__}", flush=True)
         action(ctx)
