@@ -100,7 +100,10 @@ DEFAULT_LEGEND = {"03_TPC_overlay": ["TPC 1 (D1-1)", "TPC 2 (D2-1)"],
 HEATMAPS = ("06_in_situ_PL_heatmap", "08_in_situ_PL_normalized_global", "09_in_situ_PL_normalized_per_scan")
 HEATMAP_KEYS = ("interval_s", "start_s")
 MINUTES_ABOVE_S = 300.0   # x span above ~300 s is shown in minutes
-FIGURE_KEYS = ("figure", "axes", "labels", "legend", "heatmap")
+FIGURE_KEYS = ("figure", "axes", "labels", "legend", "heatmap", "palette")
+# Series palette (figure level): {"palette": "nature-6c-2"}. Any id from
+# palettes.list_palettes(); naming one switches the series colours of that
+# figure. Absent = no palette named: the figure keeps its spec colours.
 
 
 class ConfigError(ValueError):
@@ -353,7 +356,26 @@ def validate(cfg):
         hm = validate_heatmap(name, cfg["heatmap"])
         if hm:
             out["heatmap"] = hm
+    if cfg.get("palette") is not None:
+        out["palette"] = validate_palette(cfg["palette"], name)
     return out
+
+
+def has_series(name):
+    """True for line figures (series palettes apply); image/heatmap figures keep their colormap."""
+    return "colorbar" not in AXES[name]
+
+
+def validate_palette(value, name=None):
+    """A known palette id (see palettes.list_palettes()); raises ConfigError otherwise."""
+    import palettes
+    if name is not None and not has_series(name):
+        raise ConfigError(f"{name} is a colormap figure; palettes apply to line figures only "
+                          f"({', '.join(n for n in AXES if has_series(n))})")
+    try:
+        return palettes.validate_name(value)
+    except palettes.PaletteError as exc:
+        raise ConfigError(str(exc)) from None
 
 
 def load(name, directory=None):
@@ -466,7 +488,7 @@ def apply(name, cfg, fig, ax, cb=None):
             ax.yaxis.label.set_text(text)
         elif cb is not None:
             (cb.ax.yaxis if cb.orientation == "vertical" else cb.ax.xaxis).label.set_text(text)
-    if not (cfg["axes"] or cfg.get("labels") or cfg.get("legend") or cfg.get("heatmap")):
+    if not (cfg["axes"] or cfg.get("labels") or cfg.get("legend") or cfg.get("heatmap") or cfg.get("palette")):
         ax.tick_params(which="both", top=False, right=False, labeltop=False, labelright=False)
         return {}
     for axis, s in cfg["axes"].items():
@@ -479,7 +501,7 @@ def apply(name, cfg, fig, ax, cb=None):
     # Spec: top and right spines stay visible and never carry ticks or labels.
     ax.tick_params(which="both", top=False, right=False, labeltop=False, labelright=False)
     applied = dict(cfg["axes"])
-    for key in ("labels", "legend", "heatmap"):
+    for key in ("labels", "legend", "heatmap", "palette"):
         if cfg.get(key):
             applied[key] = cfg[key]
     return applied
@@ -501,6 +523,9 @@ def describe(name, cfg):
     if name in DEFAULT_LEGEND:
         lines.append(f"  legend text: {'; '.join(legend_labels(name, cfg))}"
                      f"{' (default)' if not (cfg or {}).get('legend') else ''}")
+    pal = (cfg or {}).get("palette")
+    if has_series(name):
+        lines.append(f"  palette: {pal if pal else 'none named (spec colours)'}")
     if name in HEATMAPS:
         h = (cfg or {}).get("heatmap") or {}
         lines.append("  acquisition interval: " + (f"{h['interval_s']:g} s (start {h.get('start_s', 0):g} s) -> "

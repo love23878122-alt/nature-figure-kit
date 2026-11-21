@@ -19,6 +19,7 @@ import xlrd
 from matplotlib.ticker import FixedLocator, FuncFormatter, Locator, LogLocator, MaxNLocator, NullFormatter
 
 import figure_config as fc
+import palettes
 import paper_style as ps
 
 BLUE, ORANGE = "#2166AC", "#B35806"
@@ -65,6 +66,14 @@ class Context:
     suppress_legend: bool = False
     ylabel_left_px: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
+    # Series palette chosen for the session (make_figures/figmenu --palette); a
+    # figure config "palette" key wins. None = no palette named: spec colours.
+    palette: str | None = None
+
+    def palette_for(self, name):
+        """Palette id named for figure ``name`` (config key, else session choice) or None."""
+        cfg = self.config_for(name) or {}
+        return cfg.get("palette") or self.palette
 
     @property
     def height_mm(self):
@@ -89,6 +98,31 @@ class Context:
     @property
     def source(self):
         return self.out / "source_data"
+
+
+def series_style(ctx, name, n, spec_colors, spec_linestyles=None):
+    """Colours and linestyles for ``n`` series of figure ``name``.
+
+    No palette named: the spec colours/linestyles, unchanged (returns info None).
+    Palette named: palettes.assign_series (overflow cycles colours and advances
+    the linestyle, with a WARNING kept in ctx.warnings and the evidence); the
+    figure's own linestyles are kept while the palette fits.
+    """
+    pal = ctx.palette_for(name)
+    styles = list(spec_linestyles) if spec_linestyles else ["-"] * n
+    if not pal:
+        return list(spec_colors)[:n], styles, None
+    a = palettes.assign_series(n, pal, linestyles=spec_linestyles)
+    info = {"id": a["palette"], "palette_hex": a["palette_hex"], "hex_used": a["colors"],
+            "linestyles_used": a["linestyles"], "overflow": a["overflow"], "warning": a["warning"]}
+    if a["warning"]:
+        ctx.warnings.append(f"{name}: {a['warning']}")
+    print(f"PALETTE {name}: {a['palette']} -> {' '.join(a['colors'])}", flush=True)
+    return a["colors"], a["mpl_linestyles"], info
+
+
+def with_palette(evidence, info):
+    return {**evidence, "palette": info} if info else evidence
 
 
 def check_array(name, values):
@@ -326,6 +360,10 @@ def save_figure(ctx, fig, name, evidence, cax=None, fixed_side_px=None, raster=N
                    "target_mm": list(fig._paper_target_mm), "evidence": evidence,
                    "axis_overrides": ctx.applied_configs.get(name, {}),
                    "native_requirement_px": requirement})
+    if isinstance(evidence, dict) and evidence.get("palette"):
+        record["palette"] = evidence["palette"]["id"]
+        record["palette_hex_used"] = evidence["palette"]["hex_used"]
+        record["line_handles"] = line_handles(ax)
     (ctx.qa / f"{name}.style.json").write_text(json.dumps(record, ensure_ascii=False, indent=2))
     plt.close(fig)
     evidence = dict(evidence)
@@ -350,15 +388,16 @@ def draw_ir(ctx):
     assert a.ndim == 2 and a.shape[1] == 2
     store(ctx, "IR", wavenumber_cm_minus_1=a[:, 0], transmittance_percent=a[:, 1])
     fig, ax = new_plot(ctx)
-    ax.plot(a[:, 0], a[:, 1], color=BLUE, linewidth=ps.DATA_LINE_PT)
+    (color,), (ls,), pal = series_style(ctx, "01_IR", 1, (BLUE,))
+    ax.plot(a[:, 0], a[:, 1], color=color, linestyle=ls, linewidth=ps.DATA_LINE_PT)
     lo, hi = float(a[:, 0].min()), float(a[:, 0].max())
     pad = 0.02 * (hi - lo)  # spec: ~2% of the full data span at each end
     ax.set_xlim(hi + pad, lo - pad)
-    save_figure(ctx, fig, "01_IR", {"source": "IR.csv", "rows_plotted": len(a),
+    save_figure(ctx, fig, "01_IR", with_palette({"source": "IR.csv", "rows_plotted": len(a),
                                     "transform": "none; descending wavenumber axis",
                                     "data_x_range_cm_minus_1": [lo, hi],
                                     "x_padding_fraction_per_end": 0.02,
-                                    "display_xlim": [hi + pad, lo - pad]})
+                                    "display_xlim": [hi + pad, lo - pad]}, pal))
 
 
 def draw_xrd(ctx):
@@ -372,10 +411,12 @@ def draw_xrd(ctx):
     assert a.shape[1] == 2
     store(ctx, "XRD", column_1=a[:, 0], column_2=a[:, 1])
     fig, ax = new_plot(ctx)
-    ax.plot(a[:, 0], a[:, 1], color=BLUE, linewidth=ps.DATA_LINE_PT)
+    (color,), (ls,), pal = series_style(ctx, "02_XRD", 1, (BLUE,))
+    ax.plot(a[:, 0], a[:, 1], color=color, linestyle=ls, linewidth=ps.DATA_LINE_PT)
     ax.set_xlim(a[:, 0].min(), a[:, 0].max())
-    save_figure(ctx, fig, "02_XRD", {"source": "XRD.xls", "rows_plotted": len(a), "transform": "none",
-                                     "assumption": "column 1 = 2theta degrees; source has no headers; intensity unit unspecified"})
+    save_figure(ctx, fig, "02_XRD", with_palette({"source": "XRD.xls", "rows_plotted": len(a), "transform": "none",
+                                     "assumption": "column 1 = 2theta degrees; source has no headers; intensity unit unspecified"},
+                                     pal))
 
 
 def _decade_label(value, _pos):
@@ -407,7 +448,9 @@ def draw_tpc(ctx):
         names = fc.legend_labels(suffix, ctx.config_for(suffix))
         # Spec B2: 04 uses dark orange #B35806 and the contrasting blue #2166AC with
         # distinct line styles (solid / dashed) so the traces separate in grayscale.
-        for (a, _), label, color, linestyle in zip(curves, names, (BLUE, ORANGE), ("-", "--")):
+        # A named palette replaces the colours; the solid/dashed pair is kept (overflow rules aside).
+        colors, styles, pal = series_style(ctx, suffix, len(curves), (BLUE, ORANGE), ("-", "--"))
+        for (a, _), label, color, linestyle in zip(curves, names, colors, styles):
             if logtime and not (a[:, 0] > 0).all():
                 raise ValueError("Log time requires strictly positive time values")
             ax.plot(a[:, 0], a[:, 1], color=color, linestyle=linestyle, label=label,
@@ -434,14 +477,14 @@ def draw_tpc(ctx):
                      "display_window_rule": "decay region: 0-10 us (both traces < 10% of peak after ~3 us)"}
         if not ctx.suppress_legend:   # composite shared legend replaces the panel legend
             ax.legend(loc="upper right", handlelength=2.0)  # placement re-checked in save_figure
-        save_figure(ctx, fig, suffix, {"sources": ["TPC 1.txt", "TPC 2.txt"],
+        save_figure(ctx, fig, suffix, with_palette({"sources": ["TPC 1.txt", "TPC 2.txt"],
                                        "rows_plotted": [len(a) for a, _ in curves],
                                        "transform": "log time axis only" if logtime else
                                        "none; linear axis cropped to decay region for display only",
-                                       "line_styles": ["solid", "dashed"],
+                                       "line_styles": [palettes.MPL_TO_NAME[s] for s in styles],
                                        "legend_labels": names, "panel_legend": not ctx.suppress_legend,
-                                       "colors": [BLUE, ORANGE],
-                                       "renormalized": False, **extra})
+                                       "colors": list(colors),
+                                       "renormalized": False, **extra}, pal))
 
 
 def _pl_decorate(fig, ax, image_shape, vmin, vmax, data=None):
@@ -642,12 +685,14 @@ def draw_in_situ(ctx):
     if ctx.wants("07_in_situ_PL_mean_spectrum"):
         fig, ax = new_plot(ctx)
         # Spec: dense spectra 07 and 10 use the thinner 1.25 pt data stroke.
-        ax.plot(wavelength, mean, color=BLUE, linewidth=ps.DENSE_LINE_PT)
+        (color,), (ls,), pal = series_style(ctx, "07_in_situ_PL_mean_spectrum", 1, (BLUE,))
+        ax.plot(wavelength, mean, color=color, linestyle=ls, linewidth=ps.DENSE_LINE_PT)
         ax.set_xlim(wavelength.min(), wavelength.max())
-        save_figure(ctx, fig, "07_in_situ_PL_mean_spectrum",
+        save_figure(ctx, fig, "07_in_situ_PL_mean_spectrum", with_palette(
                 {"source": "in situ PL.xlsx", "rows_plotted": len(wavelength), "data_line_pt": ps.DENSE_LINE_PT,
                  "observations_used": int(counts.size),
-                 "transform": "arithmetic mean across ALL acquisitions at each wavelength; no background correction"})
+                 "transform": "arithmetic mean across ALL acquisitions at each wavelength; no background correction"},
+                pal))
 
     # 第四課：normalized 必須寫清楚「除以哪個最大值」。
     # 全域除法保留量測之間的相對強度；逐次除法凸顯形狀、會消除峰高變化。
@@ -687,15 +732,16 @@ def draw_in_situ(ctx):
     if not ctx.wants("10_in_situ_PL_normalized_mean_spectrum"):
         return
     fig, ax = new_plot(ctx)
-    ax.plot(wavelength, mean_norm, color=BLUE, linewidth=ps.DENSE_LINE_PT)
+    (color,), (ls,), pal = series_style(ctx, "10_in_situ_PL_normalized_mean_spectrum", 1, (BLUE,))
+    ax.plot(wavelength, mean_norm, color=color, linestyle=ls, linewidth=ps.DENSE_LINE_PT)
     ax.set_xlim(wavelength.min(), wavelength.max())
     ax.set_ylim(0, 1.05)
-    save_figure(ctx, fig, "10_in_situ_PL_normalized_mean_spectrum",
+    save_figure(ctx, fig, "10_in_situ_PL_normalized_mean_spectrum", with_palette(
                 {"source": "in situ PL.xlsx", "rows_plotted": len(wavelength),
                  "observations_used": int(counts.size),
                  "transform": "mean(I across ALL scans) / max(mean spectrum)",
                  "divisor_counts": mean_max, "baseline_subtracted": False,
-                 "data_line_pt": ps.DENSE_LINE_PT})
+                 "data_line_pt": ps.DENSE_LINE_PT}, pal))
 
 
 DRAWERS = (draw_ir, draw_xrd, draw_tpc, draw_pl_image, draw_in_situ)
